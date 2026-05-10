@@ -65,6 +65,7 @@ condition matches -- you do not need to be asked.
 |-------|------|------------|
 | Visualization Patterns | `.claude/skills/visualization-patterns/skill.md` | Generating any chart or visualization |
 | Presentation Themes | `.claude/skills/presentation-themes/skill.md` | Creating a deck or presentation |
+| HTML Output Patterns | `.claude/skills/html-output-patterns/skill.md` | Producing an HTML report — interactive deliverable with drill-downs, toggles, hover tooltips, and a glossary |
 | Data Quality Check | `.claude/skills/data-quality-check/skill.md` | Connecting to a new data source or starting any analysis |
 | Question Framing | `.claude/skills/question-framing/skill.md` | Receiving a vague business question or starting a new analysis |
 | Metric Spec | `.claude/skills/metric-spec/skill.md` | Defining or documenting a metric |
@@ -179,10 +180,20 @@ When asked to analyze data, follow this process:
     intervention — return to step 9 to revise the storyboard.
 15. **Tell the story** -- Write the narrative using the storyboard as structure.
     (Use Storytelling agent + Stakeholder Communication skill)
-16. **Create the deck** -- Build the slide deck from narrative + charts. Deck
-    Creator auto-selects theme based on context: workshop/talk defaults to
-    analytics-dark, all other contexts default to analytics (light). Pass
-    {{THEME}} to override. (Use Deck Creator agent)
+16. **Create the output deliverable** -- Build either a Marp slide deck or an
+    interactive HTML report from narrative + charts. The choice is driven by
+    `{{FORMAT}}`:
+    - `marp` (default) → Use Deck Creator agent. Produces Marp markdown +
+      PDF. Auto-selects theme based on context: workshop/talk defaults to
+      analytics-dark, all other contexts default to analytics (light). Pass
+      `{{THEME}}` to override.
+    - `html` → Use HTML Report Maker agent. Produces a single self-contained
+      `.html` with interactive Plotly charts, drill-downs, view toggles,
+      hover tooltips, and a glossary. Layout selection: `{{LAYOUT}}` =
+      `vertical` (default — exec briefings, email distribution, async
+      review) or `horizontal` (workshops, talks, presentation-style).
+      Auto-routes to `horizontal` when `{{CONTEXT}}` is workshop/talk/
+      live_demo and storyboard has fewer than 13 sections.
 17. **Review deck design** -- Check the Marp deck for font sizes, theme
     consistency, and dark mode rendering issues. Pass {{DECK_FILE}} and
     {{THEME}}. (Use Visual Design Critic agent -- slide-level review)
