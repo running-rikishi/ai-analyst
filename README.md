@@ -1,13 +1,15 @@
-# AI Analyst v2
+# AI Analyst v2 — running-rikishi fork
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Claude Code Required](https://img.shields.io/badge/requires-Claude%20Code-blueviolet.svg)](https://claude.ai/code)
 [![Tests](https://img.shields.io/badge/tests-606%20passing-brightgreen.svg)](#)
 
-An AI product analyst built on Claude Code. You ask a business question, it runs a pipeline of 18 agents that frame the question, explore your data, find the root cause, build a narrative, and hand you a validated slide deck with speaker notes. Minutes, not weeks.
+> **Fork of [ai-analyst-lab/ai-analyst](https://github.com/ai-analyst-lab/ai-analyst)** with two extensions: a tabular-ML build framework (15 skills + 5 agents + production reference), and interactive HTML reports as a parallel deliverable to Marp/PDF decks. See [Fork Extensions](#fork-extensions) for details.
 
-**18** specialized agents | **39** auto-applied skills | **20** slash commands | DAG-based parallel execution | PDF + HTML export
+An AI product analyst built on Claude Code. You ask a business question, it runs a pipeline of agents that frame the question, explore your data, find the root cause, build a narrative, and hand you a validated slide deck (or interactive HTML report) with speaker notes. Minutes, not weeks.
+
+**24** specialized agents | **55** auto-applied skills | **20** slash commands | DAG-based parallel execution | PDF + interactive HTML export
 
 ---
 
@@ -45,6 +47,42 @@ V2 is a ground-up rebuild of the intelligence layer. The pipeline and agents fro
 
 ---
 
+## Fork Extensions
+
+This fork adds two capabilities on top of v2. Both are battle-tested patterns codified into the framework's skill/agent model.
+
+### 1. Tabular ML build framework
+
+A coherent build → ship → productionize layer for tabular supervised ML (classification, regression, ranking on tree-based or linear algorithms — panel, cross-sectional, or single-entity time-series data). Deep learning, LLM fine-tuning, and computer vision halt explicitly with redirects; see `agents/FRAMEWORK_GAPS.md`.
+
+The end-to-end story:
+
+```
+ml-feature-prep --> ml-model-train --> ml-model-evaluation (optional)
+                --> ml-ship-decision --> BUILD_RESULTS.md
+                --> ml-productionize --> migration plan referencing AGENTS_ML.md
+```
+
+**5 ML agents**, **15 ML skills** (CV, tuning, feature/target engineering, calibration, baseline gates, SHAP-based explanation, library smoke tests), **7 domain BUILD_RESULTS templates** (`cross_sell`, `churn`, `fraud`, `forecast`, `pricing`, `recommendation`, `generic`), and a 765-line vendor-neutral production reference (`agents/AGENTS_ML.md`) covering DAG patterns, watermarking, three-table output schemas, DQ checks, and rollback.
+
+Shipped in [PR #1](https://github.com/running-rikishi/ai-analyst/pull/1).
+
+### 2. Interactive HTML reports
+
+A parallel output deliverable to the existing Marp/PDF decks. Use Marp when the report needs to print well or be PDF-attached; use HTML when stakeholders consume via Slack/email/browser link and want to self-serve exploration.
+
+Every HTML report is a single self-contained `.html` file with drill-down panels on every aggregation chart (click a bar → see breakdowns by other dimensions in tabbed views), view toggles when the data has filter dimensions, hover-explained technical terms, a glossary section at the end, and a help overlay explaining the interactions. Two layouts: vertical (scroll — exec/email/async) and horizontal (scroll-snap — workshops/talks).
+
+The principle: **HTML reports are interactive exploration tools, not static documents. If a stakeholder gets the same information from a screenshot, the format failed.**
+
+Working demo: [`docs/example_report_vertical.html`](docs/example_report_vertical.html). Full guide: [`docs/html-output-guide.md`](docs/html-output-guide.md). Shipped in [PR #2](https://github.com/running-rikishi/ai-analyst/pull/2).
+
+### Continuous improvement loop
+
+Both extensions plug into the v2 corrections system. When stakeholder feedback surfaces a new pattern, log it via `/log-correction` and the relevant skill grows; the agent's templates follow whatever the skill says. The ML framework's severity gates and the HTML output's interaction patterns were both built this way — every rule traces to a real correction, not invented from theory.
+
+---
+
 ## Don't Know What to Do? Just Ask.
 
 Claude knows the entire system — every agent, skill, command, and dataset. If you're stuck, ask it:
@@ -72,10 +110,12 @@ npm install -g @anthropic-ai/claude-code
 **2. Clone and set up**
 
 ```bash
-git clone https://github.com/ai-analyst-lab/ai-analyst.git
+git clone https://github.com/running-rikishi/ai-analyst.git
 cd ai-analyst
 pip install -e ".[dev]"
 ```
+
+> Cloning the upstream `ai-analyst-lab/ai-analyst` works too if you only want v2 without the fork extensions.
 
 **3. Start Claude Code**
 
@@ -115,7 +155,7 @@ Claude queries the data and returns an answer with a chart. Simple questions get
 /run-pipeline data_path=data/your_dataset/ question="What's driving the decline in conversion?"
 ```
 
-The pipeline runs 18 agents across 4 phases: Frame the question, Analyze the data, Build the story, Create the deck. You get a validated analysis, branded charts, a narrative, and a slide deck with speaker notes. Exports to PDF and HTML.
+The pipeline runs the agents across 4 phases: Frame the question, Analyze the data, Build the story, Create the deck. You get a validated analysis, branded charts, a narrative, and either a slide deck with speaker notes (default) or an interactive HTML report — set `FORMAT=html` to route step 16 to the HTML Report Maker instead of the Deck Creator. Both export options coexist.
 
 ### 3. Explore a dataset
 
@@ -165,7 +205,7 @@ When you run `/run-pipeline`, Claude orchestrates 18 agents across 4 phases:
 
 **Phase 3 — Story:** Designs a storyboard (Context-Tension-Resolution arc), generates charts with collision detection, and reviews visual quality against a 16-point checklist.
 
-**Phase 4 — Deck:** Writes a stakeholder narrative, builds a branded Marp slide deck with HTML components, reviews slide design, and ensures every recommendation has a follow-up plan. Exports to PDF and HTML.
+**Phase 4 — Deck:** Writes a stakeholder narrative, then builds either a branded Marp slide deck with HTML components (default) or an interactive HTML report with drill-downs, view toggles, hover tooltips, and a glossary (`FORMAT=html`). Reviews the chosen output, and ensures every recommendation has a follow-up plan. Marp exports to PDF + HTML; the HTML report ships as a single self-contained `.html`.
 
 You don't have to run the whole thing. Five execution plans let you run just the part you need:
 
@@ -324,9 +364,10 @@ outputs/
   analysis_report_YYYY-MM-DD.md         # Full analysis with findings
   validation_<dataset>_YYYY-MM-DD.md    # Independent validation of findings
   narrative_<dataset>_YYYY-MM-DD.md     # Stakeholder-ready story
-  deck_<dataset>_YYYY-MM-DD.marp.md    # Slide deck (Marp source)
-  deck_<dataset>_YYYY-MM-DD.pdf        # PDF export
-  deck_<dataset>_YYYY-MM-DD.html       # HTML export (self-contained)
+  deck_<dataset>_YYYY-MM-DD.marp.md    # Slide deck (Marp source, when FORMAT=marp)
+  deck_<dataset>_YYYY-MM-DD.pdf        # PDF export (when FORMAT=marp)
+  deck_<dataset>_YYYY-MM-DD.html       # HTML export of the Marp deck (when FORMAT=marp)
+  report_<dataset>_YYYY-MM-DD.html     # Interactive HTML report (when FORMAT=html)
   close_the_loop_YYYY-MM-DD.md         # Follow-up plan for recommendations
   charts/                               # All generated charts
 
@@ -358,7 +399,7 @@ working/                                # Intermediate files (safe to delete)
 ---
 
 <details>
-<summary><strong>All 18 Agents</strong> (click to expand)</summary>
+<summary><strong>All 24 Agents</strong> (click to expand)</summary>
 
 Agents are markdown prompt templates in the `agents/` directory. Each defines a multi-step workflow with `{{VARIABLES}}` that get filled in at runtime. To invoke one, ask Claude to run it or use `/run-pipeline` to orchestrate all of them.
 
@@ -401,7 +442,8 @@ Agents are markdown prompt templates in the `agents/` directory. Each defines a 
 | Agent | What It Does | Pipeline Step |
 |-------|-------------|---------------|
 | storytelling | Converts findings into a stakeholder-ready narrative with executive summary, findings, insight, and recommendations | 15 |
-| deck-creator | Builds a branded Marp slide deck with HTML components, speaker notes, and correct theme styling | 16 |
+| deck-creator | Builds a branded Marp slide deck with HTML components, speaker notes, and correct theme styling | 16 (when `FORMAT=marp`) |
+| html-report-maker | Builds a self-contained interactive HTML report with drill-downs, view toggles, hover tooltips, and a glossary | 16 (when `FORMAT=html`) |
 | comms-drafter | Generates stakeholder communications: Slack summary, email brief, exec summary | 19 |
 
 ### Standalone
@@ -410,12 +452,24 @@ Agents are markdown prompt templates in the `agents/` directory. Each defines a 
 |-------|-------------|---------------|
 | experiment-designer | Designs A/B tests with power estimation, guardrail selection, and decision rules | (on demand) |
 
+### ML Build Framework (fork extension)
+
+Invoked on demand for tabular supervised ML projects. See [Fork Extensions](#fork-extensions) above and `agents/AGENTS_ML.md` for the production reference.
+
+| Agent | What It Does |
+|-------|-------------|
+| ml-feature-prep | Hygiene, imputation, leak audit, target profiling before training |
+| ml-model-train | Task-routed CV + tuning + ensemble + SHAP; supports {classification, regression, ranking} × {panel, cross-sectional, time-series} × {tree, linear} |
+| ml-model-evaluation | Post-train CV evaluation as a separate pass |
+| ml-ship-decision | Baseline gate + anchor stress test + rolling backtest; produces `BUILD_RESULTS.md` from one of 7 domain templates |
+| ml-productionize | Given a SHIP verdict, generates a stack-specific migration plan |
+
 </details>
 
 ---
 
 <details>
-<summary><strong>All 39 Skills</strong> (click to expand)</summary>
+<summary><strong>All 55 Skills</strong> (click to expand)</summary>
 
 Skills are instruction files in `.claude/skills/` that Claude follows automatically when a trigger condition matches. You don't invoke them manually. When you ask for a chart, the Visualization Patterns skill activates. When you start an analysis, the Data Quality Check skill runs.
 
@@ -475,7 +529,30 @@ These activate when you use a command:
 | Skill | What It Does |
 |-------|-------------|
 | presentation-themes | Theme standards for slide decks: layouts, typography, color palettes |
+| html-output-patterns | Severity-graded rules for HTML reports — progressive disclosure, drill-downs, view toggles, hover tooltips, glossary, self-containment, layout selection |
 | archive-analysis | Saves completed analyses to the knowledge system for future recall |
+
+### ML Build Framework Skills (fork extension)
+
+15 procedural skills covering the tabular ML build pipeline. See [Fork Extensions](#fork-extensions) above.
+
+| Skill | Trigger |
+|-------|---------|
+| feature-hygiene | Before training any model on tabular data — drop IDs/dates/leakage/zero-variance, add NaN indicators |
+| target-engineering | Defining a regression or classification target — forward-shift, market adjustment, winsorization, skew/balance diagnostics |
+| smart-imputation | Semantic NaN handling (recency cols vs counts) |
+| forward-chaining-cv | Temporal CV on entity-time panel data with entity-aware holdout |
+| hybrid-cv | Mixed temporal + stratified CV for sparse positives |
+| oot-window-selection | Out-of-time validation window sizing rules |
+| rolling-backtest | Walk-forward backtest harness with distribution shift diagnostics |
+| bayesian-tuning | Optuna TPE with warm-start across related products |
+| recall-optimization | 5-lever procedure for minority-class recall |
+| f1-optimization | Balanced harmonic-mean tuning, same 5-lever framework |
+| ensemble-calibration | Platt scaling, isotonic, calibration curves |
+| ml-baseline-gate | Simple-baseline ship/demote decision (1.5× over LogReg-K) |
+| shapley-values | TreeExplainer + peer-relative SHAP |
+| shap-rep-explanations | Sales-rep-readable tooltip with anchor stress test |
+| library-compat-smoke-test | 30-second stack-level sanity check before multi-hour training |
 
 </details>
 
@@ -568,7 +645,10 @@ Python modules in `helpers/` that agents call during execution:
 
 - **Setup guide:** [docs/setup-guide.md](docs/setup-guide.md)
 - **Theming:** [docs/theming.md](docs/theming.md)
-- **Questions or bugs:** Open a [GitHub Issue](https://github.com/ai-analyst-lab/ai-analyst/issues)
+- **HTML output guide:** [docs/html-output-guide.md](docs/html-output-guide.md)
+- **ML framework reference:** [agents/AGENTS_ML.md](agents/AGENTS_ML.md), [agents/FRAMEWORK_GAPS.md](agents/FRAMEWORK_GAPS.md)
+- **Fork bugs/questions:** Open a [GitHub Issue](https://github.com/running-rikishi/ai-analyst/issues)
+- **Upstream questions:** Open one against [ai-analyst-lab/ai-analyst](https://github.com/ai-analyst-lab/ai-analyst/issues)
 
 ---
 
