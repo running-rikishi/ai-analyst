@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Customer Churn Analysis — Q1 2026 (Demo)</title>
+<script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+<style>
+  :root {
+    --accent: #2563EB; --positive: #059669; --negative: #DC2626;
+    --amber: #F59E0B; --purple: #7C3AED;
+    --surface: #F8FAFC; --border: #E2E8F0;
+    --text: #1E293B; --text-sec: #64748B;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #F1F5F9; color: var(--text); line-height: 1.5; }
+  nav { position: fixed; top: 0; left: 0; width: 240px; height: 100vh; background: #1E293B; color: #CBD5E1; overflow-y: auto; z-index: 100; padding: 20px 0; font-size: 13px; }
+  nav .logo { padding: 0 20px 16px; font-size: 15px; font-weight: 700; color: #F8FAFC; }
+  nav a { display: block; padding: 8px 20px; color: #94A3B8; text-decoration: none; border-left: 3px solid transparent; transition: all 0.15s; }
+  nav a:hover, nav a.active { color: #F8FAFC; background: #334155; border-left-color: var(--accent); }
+  nav .section-label { padding: 16px 20px 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #64748B; font-weight: 600; position: sticky; top: 0; background: #1E293B; z-index: 1; }
+  main { margin-left: 240px; padding: 32px 24px; max-width: 1200px; }
+  .slide { background: white; border-radius: 12px; padding: 40px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); min-height: calc(100vh - 64px); display: flex; flex-direction: column; justify-content: center; }
+  .slide h2 { font-size: 28px; font-weight: 700; margin-bottom: 6px; color: var(--text); line-height: 1.3; }
+  .slide .subtitle { font-size: 13px; color: var(--text-sec); margin-bottom: 16px; }
+  .slide .source-note { font-size: 11px; color: #94A3B8; margin-top: 12px; font-style: italic; }
+  .slide .so-what { background: #FEF3C7; border-left: 4px solid #F59E0B; padding: 16px 20px; font-size: 15px; line-height: 1.7; margin-top: 16px; border-radius: 6px; }
+  .slide .so-what strong { color: #92400E; }
+  .section-intro { background: linear-gradient(135deg, #1E293B 0%, #334155 100%); border-radius: 12px; padding: 48px 56px; margin-bottom: 24px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); min-height: calc(100vh - 64px); display: flex; flex-direction: column; justify-content: center; color: #F8FAFC; }
+  .section-intro h2 { font-size: 32px; font-weight: 800; margin-bottom: 12px; color: #F8FAFC; }
+  .section-intro p { font-size: 17px; color: #94A3B8; line-height: 1.6; max-width: 600px; }
+  .section-intro .section-label-top { font-size: 12px; color: #60A5FA; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; font-weight: 600; }
+  .kpi-row { display: flex; gap: 16px; margin: 20px 0; align-items: stretch; flex-wrap: wrap; }
+  .kpi-card { flex: 1; min-width: 160px; background: var(--surface); border-radius: 8px; padding: 20px; text-align: center; border: 1px solid var(--border); }
+  .kpi-value { font-size: 36px; font-weight: 800; }
+  .kpi-value.accent { color: var(--accent); }
+  .kpi-value.negative { color: var(--negative); }
+  .kpi-value.positive { color: var(--positive); }
+  .kpi-value.amber { color: var(--amber); }
+  .kpi-label { font-size: 13px; color: var(--text-sec); margin-top: 4px; }
+  .kpi-delta { font-size: 13px; color: var(--text-sec); margin-top: 2px; }
+  .plotly-chart { width: 100%; min-height: 380px; }
+  .rec-card { display: flex; align-items: flex-start; gap: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 12px; }
+  .rec-number { flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; color: white; }
+  .rec-action { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+  .rec-rationale { font-size: 13px; color: var(--text-sec); line-height: 1.6; }
+  table.report-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; }
+  table.report-table th { text-align: left; padding: 8px 12px; background: #E2E8F0; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  table.report-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  table.report-table tr:hover { background: #F1F5F9; }
+
+  .dc-panel { display: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-top: 16px; }
+  .dc-panel.open { display: block; animation: slideDown 0.2s ease; }
+  @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+  .dc-panel h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .dc-panel h3 .close-btn { margin-left: auto; cursor: pointer; color: var(--text-sec); font-size: 18px; line-height: 1; }
+  .dc-panel h3 .close-btn:hover { color: var(--text); }
+  .dc-tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .dc-tab { padding: 4px 12px; font-size: 12px; border-radius: 16px; background: white; border: 1px solid var(--border); cursor: pointer; font-weight: 500; transition: all 0.1s; }
+  .dc-tab:hover { border-color: var(--accent); }
+  .dc-tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .dc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .dc-table th { text-align: left; padding: 8px 12px; background: #E2E8F0; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .dc-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .dc-table tr:hover { background: #F1F5F9; }
+  .dc-hint { font-size: 11px; color: var(--text-sec); margin-top: 6px; font-style: italic; }
+
+  .ot-toggle { display: inline-flex; gap: 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 12px; }
+  .ot-toggle button { padding: 6px 14px; font-size: 12px; font-weight: 600; border: none; background: var(--surface); color: var(--text-sec); cursor: pointer; transition: all 0.15s; }
+  .ot-toggle button:not(:last-child) { border-right: 1px solid var(--border); }
+  .ot-toggle button.active { background: var(--accent); color: white; }
+  .ot-toggle button:hover:not(.active) { background: #E2E8F0; }
+
+  .term { border-bottom: 1px dotted var(--text-sec); cursor: help; position: relative; }
+  .term:hover::after { content: attr(data-glossary); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1E293B; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; line-height: 1.4; white-space: normal; width: max-content; max-width: 320px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.2); margin-bottom: 6px; font-weight: normal; }
+  .term:hover::before { content: ''; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: #1E293B; z-index: 1000; margin-bottom: -6px; }
+
+  .glossary-grid { display: grid; grid-template-columns: 220px 1fr; gap: 12px 24px; font-size: 14px; line-height: 1.6; margin-top: 16px; }
+  .glossary-grid dt { font-weight: 700; color: var(--text); padding-top: 12px; border-top: 1px solid var(--border); }
+  .glossary-grid dd { color: var(--text-sec); padding-top: 12px; border-top: 1px solid var(--border); }
+  .glossary-grid dt:first-of-type, .glossary-grid dd:first-of-type { border-top: none; padding-top: 0; }
+
+  .help-btn { position: fixed; bottom: 24px; right: 24px; width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: white; border: none; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; cursor: pointer; z-index: 9999; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); transition: transform 0.15s; }
+  .help-btn:hover { transform: scale(1.1); }
+  .help-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); z-index: 9998; align-items: center; justify-content: center; }
+  .help-overlay.open { display: flex; }
+  .help-modal { background: white; border-radius: 12px; padding: 32px; max-width: 480px; width: 90%; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); }
+  .help-modal h3 { font-size: 18px; font-weight: 700; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+  .help-modal .close-btn { cursor: pointer; color: var(--text-sec); font-size: 24px; line-height: 1; }
+  .help-modal ul { list-style: none; padding: 0; }
+  .help-modal li { padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; display: flex; align-items: flex-start; gap: 12px; }
+  .help-modal li:last-child { border-bottom: none; }
+  .help-modal li::before { content: '→'; color: var(--accent); font-weight: 700; flex-shrink: 0; }
+
+  .demo-banner { background: rgba(37, 99, 235, 0.1); color: var(--accent); border-left: 4px solid var(--accent); padding: 10px 16px; font-size: 12px; font-weight: 600; margin-bottom: 12px; border-radius: 4px; }
+  @media (max-width: 900px) { nav { display: none; } main { margin-left: 0; padding: 16px; } }
+  @media print { nav, .help-btn, .help-overlay, .dc-panel, .ot-toggle { display: none !important; } main { margin-left: 0 !important; padding: 16px !important; max-width: 100% !important; } .slide { break-inside: avoid; box-shadow: none; border: 1px solid #E2E8F0; min-height: auto !important; } .section-intro { break-inside: avoid; box-shadow: none; } body { background: white; } }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">Churn Analysis · Demo</div>
+  <div class="section-label">Overview</div>
+  <a href="#slide-title">Title</a>
+  <a href="#slide-headline">Headline</a>
+  <a href="#slide-rec">Recommendation</a>
+  <div class="section-label">Where the Churn Is</div>
+  <a href="#section-where">Section intro</a>
+  <a href="#slide-segment">By Segment</a>
+  <a href="#slide-tenure">By Tenure</a>
+  <div class="section-label">Reference</div>
+  <a href="#slide-glossary">Glossary</a>
+</nav>
+
+<main>
+
+<div id="slide-title" class="slide" style="background: linear-gradient(135deg, #1E293B 0%, #334155 100%); color: #F8FAFC; padding: 72px 56px;">
+  <div class="demo-banner">DEMO REPORT — synthetic data, exercises every html-output-patterns rule</div>
+  <p style="font-size:12px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:#60A5FA; margin-bottom:20px;">Customer Success · Q1 2026</p>
+  <h1 style="font-size:44px; font-weight:800; color:#F8FAFC; line-height:1.15; margin-bottom:16px;">Customer Churn Analysis<br>Q1 2026</h1>
+  <p style="font-size:18px; color:#94A3B8; line-height:1.6; max-width:680px; margin-bottom:32px;">Where is churn concentrated, what's driving it, and which interventions will move the needle in Q2?</p>
+  <p style="font-size:13px; color:#64748B;">Demo data · vertical layout · Click <strong style="color:#60A5FA;">?</strong> bottom-right for usage hints</p>
+</div>
+
+<div class="slide" id="slide-headline">
+  <h2>Q1 churn ran 4.2% — Mid-Market drove $1.8M of the $3.1M total <span class="term" data-glossary="Annual Recurring Revenue: the value of subscription contracts normalized to a 12-month run rate.">ARR</span> exposure</h2>
+  <p class="subtitle">Synthetic data · 1,240 active accounts · 3-month measurement window</p>
+  <div class="kpi-row">
+    <div class="kpi-card"><div class="kpi-value negative">4.2%</div><div class="kpi-label">Quarterly churn rate</div><div class="kpi-delta">52 of 1,240 accounts</div></div>
+    <div class="kpi-card"><div class="kpi-value negative">$3.1M</div><div class="kpi-label">Total <span class="term" data-glossary="Annual Recurring Revenue: the value of subscription contracts normalized to a 12-month run rate.">ARR</span> lost</div><div class="kpi-delta">From churned accounts</div></div>
+    <div class="kpi-card"><div class="kpi-value amber">$1.8M</div><div class="kpi-label">Mid-Market exposure</div><div class="kpi-delta">58% of total — concentrated</div></div>
+  </div>
+  <div class="kpi-row">
+    <div class="kpi-card"><div class="kpi-value">142</div><div class="kpi-label">At-risk accounts</div><div class="kpi-delta">Low <span class="term" data-glossary="Net Promoter Score: a single-question loyalty metric. Score &le; 6 = detractor, 7-8 = passive, 9-10 = promoter.">NPS</span> + low usage</div></div>
+    <div class="kpi-card"><div class="kpi-value">14 mo</div><div class="kpi-label">Median tenure at churn</div><div class="kpi-delta">vs 28 mo for retained</div></div>
+    <div class="kpi-card"><div class="kpi-value">62%</div><div class="kpi-label">Of churn signals weeks ahead</div><div class="kpi-delta">Detectable via low engagement</div></div>
+  </div>
+  <div class="so-what">
+    <strong>Two patterns:</strong> Mid-Market accounts churn at higher dollar exposure than Enterprise (smaller deals × higher rate); within any segment, accounts under 18 months tenure are 2.5× more likely to churn. <strong>Recommendation:</strong> targeted save-motion for at-risk Mid-Market accounts in their first 18 months.
+  </div>
+  <p class="source-note">Source: synthetic_accounts.csv · synthetic_subscriptions.csv · 2026-01-01 to 2026-03-31 · demo data only</p>
+</div>
+
+<div class="slide" id="slide-rec">
+  <h2>Recommendation: targeted save-motion + early-warning system</h2>
+  <p class="subtitle">Three actions sequenced by impact and effort</p>
+  <div class="rec-card">
+    <div class="rec-number">1</div>
+    <div>
+      <div class="rec-action">Stand up a Mid-Market save-motion for at-risk accounts &lt;18 months tenure</div>
+      <div class="rec-rationale">142 accounts currently flagged at-risk, with $2.4M combined <span class="term" data-glossary="Annual Recurring Revenue: the value of subscription contracts normalized to a 12-month run rate.">ARR</span>. If 30% are saved (typical save-rate benchmark), that's ~$720K retention lift this quarter. Action: dedicated CSM ownership + executive sponsor pairing.</div>
+    </div>
+  </div>
+  <div class="rec-card">
+    <div class="rec-number">2</div>
+    <div>
+      <div class="rec-action">Wire low-engagement signals into the at-risk score</div>
+      <div class="rec-rationale">62% of churned accounts showed declining engagement &gt;3 weeks before churn — current at-risk score weighs only <span class="term" data-glossary="Net Promoter Score: a single-question loyalty metric. Score &le; 6 = detractor, 7-8 = passive, 9-10 = promoter.">NPS</span> and support tickets, missing the lead indicator. Adding usage decay improves precision without sacrificing recall.</div>
+    </div>
+  </div>
+  <div class="rec-card">
+    <div class="rec-number">3</div>
+    <div>
+      <div class="rec-action">Audit onboarding for accounts churning under 6 months</div>
+      <div class="rec-rationale">9 of 52 churned accounts (17%) churned within 6 months of signup — implies onboarding gap rather than product fit. Sample these accounts' first-30-day activity and identify the diverge point from successful cohorts.</div>
+    </div>
+  </div>
+  <div class="so-what">
+    <strong>Sequencing:</strong> save-motion first (highest concrete dollar). Engagement signal in parallel (model improvement). Onboarding audit feeds Q3 planning. All three reinforce each other — better signal helps the save-motion target the right accounts.
+  </div>
+  <p class="source-note">Source: see following sections for evidence behind concentration claims</p>
+</div>
+
+<div id="section-where" class="section-intro">
+  <p class="section-label-top">02 / Where the Churn Is</p>
+  <h2>Concentration Patterns</h2>
+  <p>Two views of the same population: by segment (where the dollars are) and by tenure (when accounts leave). Click any bar to drill down. Use toggles to switch between rate and dollar perspectives.</p>
+</div>
+
+<div class="slide" id="slide-segment">
+  <h2>Mid-Market churns at 5.8% — highest rate AND highest dollar exposure</h2>
+  <p class="subtitle">Q1 churn split by customer segment · <em>Click any bar to drill down by region and plan tier</em></p>
+  <div class="ot-toggle">
+    <button class="active" onclick="setView('chart-segment', 'dollars')">ARR lost ($)</button>
+    <button onclick="setView('chart-segment', 'rate')">Churn rate (%)</button>
+    <button onclick="setView('chart-segment', 'count')">Account count</button>
+  </div>
+  <div id="chart-segment" class="plotly-chart"></div>
+  <p class="dc-hint">Click any bar to drill down by region and plan tier</p>
+  <div class="dc-panel" id="dc-segment">
+    <h3><span id="dc-segment-title">Drill-down</span> <span class="close-btn" onclick="closeDC('dc-segment')">&times;</span></h3>
+    <div class="dc-tabs" id="dc-segment-tabs"></div>
+    <div id="dc-segment-table"></div>
+  </div>
+  <div class="so-what">
+    <strong>Mid-Market is the priority.</strong> 5.8% rate is well above the 4.2% portfolio average, AND Mid-Market deal sizes mean each churn = $35K average <span class="term" data-glossary="Annual Recurring Revenue: the value of subscription contracts normalized to a 12-month run rate.">ARR</span>. Enterprise has lower rates (2.1%) but higher per-account dollars; SMB has higher rates (6.4%) but lower per-account dollars. Mid-Market is the worst of both.
+  </div>
+  <p class="source-note">Source: synthetic_subscriptions.csv · 2026-Q1 · demo data only</p>
+</div>
+
+<div class="slide" id="slide-tenure">
+  <h2>Accounts churn fastest in months 12–18 — the post-honeymoon dip</h2>
+  <p class="subtitle">Q1 churn split by account tenure at churn date · <em>Click a bar for the at-risk profile of accounts in that bucket</em></p>
+  <div class="ot-toggle">
+    <button class="active" onclick="setView('chart-tenure', 'count')">Churn count</button>
+    <button onclick="setView('chart-tenure', 'rate')">Churn rate (%)</button>
+  </div>
+  <div id="chart-tenure" class="plotly-chart"></div>
+  <p class="dc-hint">Click any bar for at-risk accounts currently in that tenure bucket</p>
+  <div class="dc-panel" id="dc-tenure">
+    <h3><span id="dc-tenure-title">Drill-down</span> <span class="close-btn" onclick="closeDC('dc-tenure')">&times;</span></h3>
+    <div class="dc-tabs" id="dc-tenure-tabs"></div>
+    <div id="dc-tenure-table"></div>
+  </div>
+  <div class="so-what">
+    <strong>Two danger zones:</strong> (1) months 0–6 — early churn implies onboarding failure (9 accounts, 17% of total). (2) months 12–18 — post-honeymoon when accounts re-evaluate after the first renewal cycle (16 accounts, 31% of total). Combined that's nearly half of all churn happening before month 18.
+  </div>
+  <p class="source-note">Source: synthetic_subscriptions.csv tenure_at_churn field · demo data only</p>
+</div>
+
+<div class="slide" id="slide-glossary">
+  <h2>Glossary</h2>
+  <p class="subtitle">Plain-English definitions for technical terms used in this report</p>
+  <dl class="glossary-grid">
+    <dt>ARR</dt>
+    <dd>Annual Recurring Revenue. The value of subscription contracts normalized to a 12-month run rate. A $50K monthly customer = $600K ARR.</dd>
+
+    <dt>NPS</dt>
+    <dd>Net Promoter Score. A single-question loyalty metric: "How likely are you to recommend us?" Score ≤ 6 = detractor, 7–8 = passive, 9–10 = promoter. Net score = % promoters − % detractors.</dd>
+
+    <dt>Tenure</dt>
+    <dd>How long an account has been an active subscriber, measured from initial signup to the current snapshot (or churn date for churned accounts).</dd>
+
+    <dt>Mid-Market segment</dt>
+    <dd>Customer accounts with annual revenue between $10M and $1B (between SMB and Enterprise). In this dataset, Mid-Market accounts have a median ARR of $35K.</dd>
+
+    <dt>At-risk score</dt>
+    <dd>A composite measure of churn likelihood combining NPS, support ticket volume, and (recommended) usage decay. Higher score = more likely to churn in the next 90 days.</dd>
+
+    <dt>Save-motion</dt>
+    <dd>A coordinated retention play for accounts flagged at-risk: typically pairs a CSM with an executive sponsor and a customized re-engagement plan.</dd>
+
+    <dt>Churn rate</dt>
+    <dd>Percentage of active accounts at the start of a period that cancelled by the end of the period. Q1 churn rate = (Q1 churned) / (Q1 starting accounts).</dd>
+
+    <dt>Cohort</dt>
+    <dd>A group of accounts that share a defining attribute (signup quarter, segment, plan tier) and are tracked together over time.</dd>
+  </dl>
+  <p class="source-note">Definitions are illustrative for this demo report. In a real report, definitions reflect the analysis's actual data and methodology.</p>
+</div>
+
+</main>
+
+<button class="help-btn" onclick="document.getElementById('help-overlay').classList.add('open')">?</button>
+<div class="help-overlay" id="help-overlay" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="help-modal">
+    <h3>How to use this report <span class="close-btn" onclick="document.getElementById('help-overlay').classList.remove('open')">&times;</span></h3>
+    <ul>
+      <li>Click any bar to open a drill-down panel with detail breakdowns.</li>
+      <li>Use the toggles above charts to switch views (ARR / Rate / Count).</li>
+      <li>Hover any underlined term for a plain-English definition.</li>
+      <li>The full glossary lives at the end of the report.</li>
+      <li>Use the sidebar nav to jump between sections.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+  const DC = {
+    'segment': {
+      'Mid-Market': {
+        'by_region': {label: 'By region', rows: [
+          {region: 'NA', churned: 18, arr_lost: '$640K', rate: '6.1%'},
+          {region: 'EMEA', churned: 12, arr_lost: '$420K', rate: '5.4%'},
+          {region: 'APAC', churned: 6, arr_lost: '$240K', rate: '5.2%'},
+          {region: 'LATAM', churned: 5, arr_lost: '$180K', rate: '6.8%'},
+        ]},
+        'by_plan': {label: 'By plan tier', rows: [
+          {plan: 'Pro', churned: 22, arr_lost: '$580K', rate: '5.4%'},
+          {plan: 'Standard', churned: 14, arr_lost: '$420K', rate: '6.7%'},
+          {plan: 'Starter', churned: 5, arr_lost: '$160K', rate: '5.0%'},
+        ]},
+      },
+      'Enterprise': {
+        'by_region': {label: 'By region', rows: [
+          {region: 'NA', churned: 4, arr_lost: '$520K', rate: '2.0%'},
+          {region: 'EMEA', churned: 2, arr_lost: '$280K', rate: '1.9%'},
+          {region: 'APAC', churned: 2, arr_lost: '$240K', rate: '2.5%'},
+          {region: 'LATAM', churned: 0, arr_lost: '$0', rate: '0.0%'},
+        ]},
+        'by_plan': {label: 'By plan tier', rows: [
+          {plan: 'Enterprise+', churned: 3, arr_lost: '$540K', rate: '1.5%'},
+          {plan: 'Enterprise', churned: 5, arr_lost: '$500K', rate: '2.5%'},
+        ]},
+      },
+      'SMB': {
+        'by_region': {label: 'By region', rows: [
+          {region: 'NA', churned: 11, arr_lost: '$120K', rate: '6.5%'},
+          {region: 'EMEA', churned: 6, arr_lost: '$60K', rate: '6.0%'},
+          {region: 'APAC', churned: 4, arr_lost: '$40K', rate: '6.7%'},
+          {region: 'LATAM', churned: 2, arr_lost: '$20K', rate: '7.1%'},
+        ]},
+        'by_plan': {label: 'By plan tier', rows: [
+          {plan: 'Standard', churned: 14, arr_lost: '$140K', rate: '6.0%'},
+          {plan: 'Starter', churned: 9, arr_lost: '$100K', rate: '7.2%'},
+        ]},
+      },
+    },
+    'tenure': {
+      '0–6 months': {
+        'at_risk_now': {label: 'Currently at-risk in this bucket', rows: [
+          {account: 'Demo Acc-1042', segment: 'Mid-Market', nps: 5, last_login_days: 21, arr: '$32K'},
+          {account: 'Demo Acc-2917', segment: 'SMB', nps: 6, last_login_days: 14, arr: '$8K'},
+          {account: 'Demo Acc-1188', segment: 'Mid-Market', nps: 4, last_login_days: 30, arr: '$48K'},
+        ]},
+      },
+      '6–12 months': {
+        'at_risk_now': {label: 'Currently at-risk in this bucket', rows: [
+          {account: 'Demo Acc-0823', segment: 'Mid-Market', nps: 6, last_login_days: 19, arr: '$52K'},
+          {account: 'Demo Acc-3401', segment: 'SMB', nps: 5, last_login_days: 22, arr: '$11K'},
+        ]},
+      },
+      '12–18 months': {
+        'at_risk_now': {label: 'Currently at-risk in this bucket', rows: [
+          {account: 'Demo Acc-0214', segment: 'Mid-Market', nps: 3, last_login_days: 28, arr: '$71K'},
+          {account: 'Demo Acc-1605', segment: 'Mid-Market', nps: 5, last_login_days: 24, arr: '$44K'},
+          {account: 'Demo Acc-2208', segment: 'Enterprise', nps: 6, last_login_days: 11, arr: '$140K'},
+          {account: 'Demo Acc-3315', segment: 'SMB', nps: 4, last_login_days: 17, arr: '$9K'},
+        ]},
+      },
+      '18–24 months': {
+        'at_risk_now': {label: 'Currently at-risk in this bucket', rows: [
+          {account: 'Demo Acc-0902', segment: 'Mid-Market', nps: 5, last_login_days: 16, arr: '$38K'},
+        ]},
+      },
+      '24+ months': {
+        'at_risk_now': {label: 'Currently at-risk in this bucket', rows: [
+          {account: 'Demo Acc-0118', segment: 'Enterprise', nps: 6, last_login_days: 9, arr: '$210K'},
+        ]},
+      },
+    },
+  };
+
+  function openDC(slideKey, segment) {
+    const data = DC[slideKey] && DC[slideKey][segment];
+    if (!data) return;
+    const panel = document.getElementById('dc-' + slideKey);
+    const titleEl = document.getElementById('dc-' + slideKey + '-title');
+    const tabsEl = document.getElementById('dc-' + slideKey + '-tabs');
+    const tableEl = document.getElementById('dc-' + slideKey + '-table');
+    titleEl.textContent = segment + ' — Drill Down';
+    tabsEl.innerHTML = '';
+    const entries = Object.entries(data);
+    entries.forEach(([key, tab], i) => {
+      const btn = document.createElement('div');
+      btn.className = 'dc-tab' + (i === 0 ? ' active' : '');
+      btn.textContent = tab.label;
+      btn.onclick = () => {
+        tabsEl.querySelectorAll('.dc-tab').forEach(t => t.classList.remove('active'));
+        btn.classList.add('active');
+        renderDCTable(tableEl, tab.rows);
+      };
+      tabsEl.appendChild(btn);
+    });
+    renderDCTable(tableEl, entries[0][1].rows);
+    panel.classList.add('open');
+  }
+  function closeDC(panelId) { document.getElementById(panelId).classList.remove('open'); }
+  function renderDCTable(container, rows) {
+    if (!rows || !rows.length) { container.innerHTML = '<p style="font-size:13px; color:var(--text-sec);">No data</p>'; return; }
+    const cols = Object.keys(rows[0]);
+    let html = '<table class="dc-table"><thead><tr>';
+    cols.forEach(c => html += `<th>${c.replace(/_/g, ' ')}</th>`);
+    html += '</tr></thead><tbody>';
+    rows.forEach(r => { html += '<tr>'; cols.forEach(c => html += `<td>${r[c]}</td>`); html += '</tr>'; });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
+
+  const baseLayout = (yTitle) => ({
+    yaxis: {title: yTitle, automargin: true},
+    xaxis: {title: '', automargin: true},
+    margin: {t: 20, r: 20, b: 60, l: 80},
+    font: {family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', size: 12, color: '#1E293B'},
+    plot_bgcolor: 'white', paper_bgcolor: 'white', showlegend: false,
+  });
+  const VIEWS = {
+    'chart-segment': {
+      'dollars': {
+        data: [{
+          type: 'bar', x: ['Enterprise', 'Mid-Market', 'SMB'], y: [1040000, 1820000, 240000],
+          marker: {color: ['#94A3B8', '#DC2626', '#94A3B8']},
+          text: ['$1.04M', '$1.82M', '$0.24M'], textposition: 'outside',
+        }],
+        layout: baseLayout('ARR lost ($)'),
+      },
+      'rate': {
+        data: [{
+          type: 'bar', x: ['Enterprise', 'Mid-Market', 'SMB'], y: [2.1, 5.8, 6.4],
+          marker: {color: ['#94A3B8', '#DC2626', '#F59E0B']},
+          text: ['2.1%', '5.8%', '6.4%'], textposition: 'outside',
+        }],
+        layout: baseLayout('Churn rate (%)'),
+      },
+      'count': {
+        data: [{
+          type: 'bar', x: ['Enterprise', 'Mid-Market', 'SMB'], y: [8, 41, 23],
+          marker: {color: '#2563EB'},
+          text: ['8', '41', '23'], textposition: 'outside',
+        }],
+        layout: baseLayout('Accounts churned'),
+      },
+    },
+    'chart-tenure': {
+      'count': {
+        data: [{
+          type: 'bar', x: ['0–6 mo', '6–12 mo', '12–18 mo', '18–24 mo', '24+ mo'], y: [9, 11, 16, 8, 8],
+          marker: {color: ['#F59E0B', '#94A3B8', '#DC2626', '#94A3B8', '#94A3B8']},
+          text: ['9', '11', '16', '8', '8'], textposition: 'outside',
+        }],
+        layout: baseLayout('Accounts churned'),
+      },
+      'rate': {
+        data: [{
+          type: 'bar', x: ['0–6 mo', '6–12 mo', '12–18 mo', '18–24 mo', '24+ mo'], y: [5.8, 4.4, 6.4, 3.1, 2.5],
+          marker: {color: ['#F59E0B', '#94A3B8', '#DC2626', '#94A3B8', '#94A3B8']},
+          text: ['5.8%', '4.4%', '6.4%', '3.1%', '2.5%'], textposition: 'outside',
+        }],
+        layout: baseLayout('Churn rate (%)'),
+      },
+    },
+  };
+  function setView(chartId, viewKey) {
+    const v = VIEWS[chartId] && VIEWS[chartId][viewKey];
+    if (!v) return;
+    Plotly.react(chartId, v.data, v.layout, {responsive: true, displayModeBar: false});
+    const buttons = document.querySelectorAll(`[onclick*="setView('${chartId}'"]`);
+    buttons.forEach(b => b.classList.toggle('active', b.getAttribute('onclick').includes(`'${viewKey}'`)));
+  }
+
+  setView('chart-segment', 'dollars');
+  setView('chart-tenure', 'count');
+
+  document.getElementById('chart-segment').on('plotly_click', e => openDC('segment', e.points[0].x));
+  document.getElementById('chart-tenure').on('plotly_click', e => openDC('tenure', e.points[0].x));
+
+  const links = document.querySelectorAll('nav a');
+  const slides = document.querySelectorAll('.slide, .section-intro');
+  function updateActive() {
+    let current = '';
+    slides.forEach(s => { const r = s.getBoundingClientRect(); if (r.top < window.innerHeight / 2) current = s.id; });
+    links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + current));
+  }
+  window.addEventListener('scroll', updateActive);
+  updateActive();
+</script>
+
+</body>
+</html>

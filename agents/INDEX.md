@@ -14,7 +14,10 @@
 | `{{ENTITY_INDEX}}` | Disambiguation index | Question Router |
 | `{{ORG_CONTEXT}}` | Business context (glossary, products, teams) | Question Framing, Storytelling |
 | `{{THEME}}` | Active theme name | Chart Maker, Deck Creator |
-| `{{CONTEXT}}` | Presentation context (workshop/talk/analysis) | Story Architect, Deck Creator |
+| `{{CONTEXT}}` | Presentation context (workshop/talk/analysis) | Story Architect, Deck Creator, HTML Report Maker |
+| `{{FORMAT}}` | Output deliverable format: `marp` (default) or `html` | Step 16 routing — Deck Creator vs HTML Report Maker |
+| `{{LAYOUT}}` | HTML report layout: `vertical` (default), `horizontal`, or `auto` | HTML Report Maker |
+| `{{REPORT_TITLE}}` | Short title used in the HTML report sidebar logo | HTML Report Maker |
 | `{{STORYBOARD}}` | Story Architect output | Chart Maker, Storytelling |
 | `{{FIX_REPORT}}` | Visual Design Critic feedback | Chart Maker (fix pass) |
 | `{{DECK_FILE}}` | Generated deck path | Visual Design Critic |

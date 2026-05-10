@@ -273,6 +273,26 @@ Criteria for NEEDS REVISION (any is sufficient):
 ## Skills Used
 - `.claude/skills/visualization-patterns/skill.md` — for theme compliance, chart type selection logic, and annotation standards
 - `helpers/chart_style_guide.md` — for the full SWD declutter checklist, color palette reference, and anti-patterns
+- `.claude/skills/html-output-patterns/skill.md` — applied when reviewing an HTML report (`.html` file in `{{DECK_FILE}}`)
+
+## HTML Report Review Path
+
+When `{{DECK_FILE}}` is a `.html` file (produced by `html-report-maker`), apply the html-output-patterns skill checks in addition to chart-level review. Verdict-blocking checks:
+
+| Check | Severity | Pass condition |
+|---|---|---|
+| File is fully self-contained | BLOCKER | No external `<link rel="stylesheet" href="http*">`, no external `<script>` other than Plotly CDN, no external `<img>` URLs, no external font links |
+| Drill-downs on aggregation charts | BLOCKER | Every Plotly bar/pie/scatter with categorical axes has a matching `<div class="dc-panel">` with at least one tab |
+| View toggles where applicable | WARNING | If a chart's underlying data has a categorical filter dimension, an `<div class="ot-toggle">` group exists above it |
+| Glossary section exists | BLOCKER | `<div id="slide-glossary">` is the last slide, contains `<dl class="glossary-grid">` with `<dt>`/`<dd>` pairs |
+| Hover tooltips on technical terms | WARNING | Any term in `<span class="term" data-glossary="...">` has a matching glossary entry, and 80%+ of acronym-pattern terms in the report are wrapped |
+| Help overlay present | RECOMMENDED | `<button class="help-btn">` and `<div class="help-overlay">` exist |
+| Nav anchors resolve | BLOCKER | Every `<a href="#x">` in `<nav>` has a matching `id="x"` in `<main>` |
+| File size sane | WARNING above 5 MB, BLOCKER above 10 MB | `os.path.getsize(file)` |
+| Plotly init reaches every chart | BLOCKER | Every `<div id="chart-...">` has a matching `Plotly.newPlot('chart-...')` or `Plotly.react('chart-...')` call (allow indirection through `setView()`) |
+| Source citations on content slides | BLOCKER | Every slide that's not `title`/`section-intro`/`glossary` has a `<p class="source-note">` |
+
+Output the HTML review under a `## HTML Report Review` section in the same `working/design_review_{{DATASET}}.md` file. Verdict logic is identical to chart-level: any BLOCKER → NEEDS REVISION; only WARNINGs/INFO → APPROVED WITH FIXES; clean → APPROVED.
 
 ## Validation
 1. **Completeness**: Every chart in {{CHART_FILES}} must be reviewed. No chart skipped.
