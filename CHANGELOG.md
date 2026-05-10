@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - fork additions
+
+### Added (running-rikishi fork)
+
+- HTML report deliverable as a parallel to Marp/PDF decks
+  - New skill `html-output-patterns` with severity-graded rules for interactivity, progressive disclosure, glossary, and self-containment
+  - New agent `html-report-maker` (pipeline_step: 16, parallel to deck-creator)
+  - Workflow integration: step 16 routes by `{{FORMAT}}` (`marp` default → Deck Creator; `html` → HTML Report Maker)
+  - New system variables: `{{FORMAT}}`, `{{LAYOUT}}`, `{{REPORT_TITLE}}`
+  - Visual Design Critic gains an HTML Report Review Path with self-containment, drill-down coverage, glossary completeness, and anchor-resolution checks
+  - Working demo at `docs/example_report_vertical.html` using synthetic data
+  - Guide at `docs/html-output-guide.md` covering when to use HTML vs Marp, layout selection, customization, and continuous-improvement loop
+- Earlier in this fork: ML framework (15 skills + 5 build agents + production reference + 7 BUILD_RESULTS templates) — see prior fork PR
+
 ## [2.0.0] - 2026-02-23
 
 ### Added
