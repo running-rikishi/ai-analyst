@@ -66,6 +66,7 @@ condition matches -- you do not need to be asked.
 | Visualization Patterns | `.claude/skills/visualization-patterns/skill.md` | Generating any chart or visualization |
 | Presentation Themes | `.claude/skills/presentation-themes/skill.md` | Creating a deck or presentation |
 | HTML Output Patterns | `.claude/skills/html-output-patterns/skill.md` | Producing an HTML report — interactive deliverable with drill-downs, toggles, hover tooltips, and a glossary |
+| Autoresearch Loop | `.claude/skills/autoresearch-loop/skill.md` | Running autonomous experimentation above bayesian-tuning — widens search space to algorithm/features/target/CV with hill-climb-from-best architecture |
 | Data Quality Check | `.claude/skills/data-quality-check/skill.md` | Connecting to a new data source or starting any analysis |
 | Question Framing | `.claude/skills/question-framing/skill.md` | Receiving a vague business question or starting a new analysis |
 | Metric Spec | `.claude/skills/metric-spec/skill.md` | Defining or documenting a metric |
