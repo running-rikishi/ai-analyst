@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added (running-rikishi fork)
 
+- Autoresearch framework for autonomous ML experimentation above bayesian-tuning
+  - New skill `autoresearch-loop` codifying the canonical architectural rules: hill-climb-from-best, in-loop smoke test, token-budget headroom (48K) for full-file rewrites, feature-name lint pre-smoke, per-iter pipeline snapshots, Optuna retune with LLM-curated candidate selection, interpretability gate, and verdict criteria
+  - New agent `ml-autoresearch` that runs the framework on any harness/pipeline pair
+  - New module `helpers/autoresearch/retune.py`: post-loop Optuna retune of LLM-curated top-N candidates. LLM picks for architectural diversity + tuning upside (not just metric rank — top-N-by-metric tends to surface near-duplicate cousins, retuning them produces redundant numbers). Monkey-patches xgb/lgbm constructors so pipelines don't need a tuning hook. Per-trial events logged to `runner_log.jsonl` so multi-hour runs are observable. KeyboardInterrupt handler persists partial results so runs can be safely halted. Incremental leaderboard writes after each candidate.
+  - Runner safety rails: $250 cost cap (production ML research budget, not POC), `max_completion_tokens=48000` for frontier-model reasoning headroom, env-only API key reads, path sanitization on logs, response objects never serialized to disk
+  - **Battle-test result on IEEE-CIS Fraud Detection (public Kaggle): 0.9406 ROC-AUC — Kaggle gold tier (≥0.94)**, achieved by autoresearch loop + Optuna retune. Beats Optuna-tuned baseline (0.9218) by +2.04%. Single XGB+LGBM ensemble, ~$30 total LLM cost, ~10h wall-clock. All agent-engineered features pass interpretability gate (3 of top-15 SHAP features are plain-English agent-engineered; remaining 12 are Vesta-anonymized features that ship with the dataset — agent does not introduce opacity).
+  - Inspired by https://github.com/karpathy/autoresearch, adapted for tabular supervised ML.
 - HTML report deliverable as a parallel to Marp/PDF decks
   - New skill `html-output-patterns` with severity-graded rules for interactivity, progressive disclosure, glossary, and self-containment
   - New agent `html-report-maker` (pipeline_step: 16, parallel to deck-creator)

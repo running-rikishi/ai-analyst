@@ -49,7 +49,7 @@ V2 is a ground-up rebuild of the intelligence layer. The pipeline and agents fro
 
 ## Fork Extensions
 
-This fork adds two capabilities on top of v2. Both are battle-tested patterns codified into the framework's skill/agent model.
+This fork adds three capabilities on top of v2. All are battle-tested patterns codified into the framework's skill/agent model.
 
 ### 1. Tabular ML build framework
 
@@ -77,9 +77,25 @@ The principle: **HTML reports are interactive exploration tools, not static docu
 
 Working demo: [`docs/example_report_vertical.html`](docs/example_report_vertical.html). Full guide: [`docs/html-output-guide.md`](docs/html-output-guide.md). Shipped in [PR #2](https://github.com/running-rikishi/ai-analyst/pull/2).
 
+### 3. Autoresearch framework
+
+Autonomous experimentation above `bayesian-tuning`. Where Optuna can only tune hyperparameters within a fixed search space, autoresearch widens the search space — algorithm choice, feature engineering, target reformulation, CV strategy — by having an LLM agent edit a mutable `pipeline.py` across iterations. A post-loop Optuna retune phase then tunes diverse candidates picked by an LLM for architectural variety + tuning upside.
+
+**The framework is general.** Bring your own dataset, problem, target, and harness. Autoresearch adapts to whatever `harness.py` + initial `pipeline.py` + `program.md` you write. The harness defines load + split + scorer; the agent invents features and selects algorithms within the constraints you set; the retune step Optuna-tunes the most promising candidates. The reference benchmark below validates the framework reaches expert-tier results — your own problem will look different in scale, target, and features, and the framework adapts.
+
+![Autoresearch trajectory: climbs from Optuna baseline to Kaggle gold in ~67 iterations](docs/autoresearch_trajectory.png)
+
+**Reference benchmark** (IEEE-CIS Fraud Detection, public Kaggle): autoresearch reached **0.9406 ROC-AUC — Kaggle gold tier (≥0.94)** in ~67 total iterations (56 loop + retune), beating an Optuna-tuned baseline by **+2.04%**. Single XGB+LGBM ensemble, **~$30 LLM cost**, **~10h wall-clock**. All agent-engineered features pass the interpretability gate (no PolynomialFeatures, no hash encoding, no opaque cross-products).
+
+Architecture: three-file separation (fixed harness, mutable pipeline, human-edited program.md), hill-climb-from-best, in-loop smoke test, feature-name lint, per-iter snapshots, Optuna retune with LLM-curated picks, interpretability gate, $250 cost cap, env-only API keys. See `.claude/skills/autoresearch-loop/skill.md` for the canonical rules and `agents/ml-autoresearch.md` for the agent contract.
+
+**When to use:** tabular supervised ML with a clean target metric (classification, regression, ranking on tree-based or linear algorithms). Out of scope: deep learning, computer vision, LLM fine-tuning, and tacit-knowledge expert tasks (legal review, medical judgment) where the technique library isn't well-represented in LLM training.
+
+Inspired by [Karpathy's autoresearch](https://github.com/karpathy/autoresearch), adapted for tabular ML. Shipped in [PR #4](https://github.com/running-rikishi/ai-analyst/pull/4).
+
 ### Continuous improvement loop
 
-Both extensions plug into the v2 corrections system. When stakeholder feedback surfaces a new pattern, log it via `/log-correction` and the relevant skill grows; the agent's templates follow whatever the skill says. The ML framework's severity gates and the HTML output's interaction patterns were both built this way — every rule traces to a real correction, not invented from theory.
+All three extensions plug into the v2 corrections system. When stakeholder feedback surfaces a new pattern, log it via `/log-correction` and the relevant skill grows; the agent's templates follow whatever the skill says. The ML framework's severity gates, the HTML output's interaction patterns, and autoresearch's runner-architecture rules were all built this way — every rule traces to a real correction, not invented from theory.
 
 ---
 
