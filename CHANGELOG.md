@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased] - fork additions
 
+### Added (running-rikishi fork) — v1.1 polish
+
+- **Dataset adapter pattern** (`helpers/autoresearch/harness_factory.py`): point at a YAML config that describes your dataset (main table, target, split, scorer, optional auxiliary tables) and get back a Harness ready for the autoresearch runner. Two example configs ship: `configs/ieee_cis_fraud.yaml` (single-table reference, time-ordered split) and `configs/home_credit.yaml` (multi-table example: 7 tables joined on SK_ID_CURR / SK_ID_BUREAU / SK_ID_PREV). Multi-table mode hands the agent raw DataFrames so it can invent cross-table aggregations.
+- **Per-trial param persistence** (CORR-014): `retune.py` now writes `trials_log_iter_NNNN.jsonl` per candidate with full Optuna params for every trial. Any historical trial is reproducible by reading its line from that file — no need to re-run the study.
+- **Safer default cost cap** (CORR-015): `DEFAULT_MAX_COST_USD` lowered from $250 to $30. First-time users can't accidentally burn $250 overnight. Serious research runs opt in explicitly via `--max-cost 250`.
+
 ### Added (running-rikishi fork)
 
 - Autoresearch framework for autonomous ML experimentation above bayesian-tuning

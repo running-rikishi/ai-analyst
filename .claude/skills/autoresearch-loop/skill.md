@@ -81,12 +81,13 @@ Severity: HIGH. False-positive cost (one wasted iter from a legitimate name matc
 
 ### 5. Cost cap + path sanitization (CORR-008 to CORR-010 implications)
 
-- Hard `MAX_RUN_COST_USD` cap (default **$250** — production ML research budget), enforced every iteration from API usage fields
+- Hard `MAX_RUN_COST_USD` cap (default **$30** — safe for first-time users; raise via `--max-cost 250` for production ML research runs), enforced every iteration from API usage fields. The default is intentionally conservative so a script bug can't burn budget overnight.
+- Cap precedence: cost cap and time cap (`--max-hours`, default 4h) both halt at the next iteration boundary. Whichever fires first wins.
 - All log writes pass through path sanitization (strip `$HOME` to `<HOME>`)
 - API key read from environment only — never as a parameter, never logged, never in source
 - Response objects never serialized to disk — extract specific usage fields only
 
-Severity: BLOCKER. This is the first framework component with write access to user spending.
+Severity: BLOCKER. This is the first framework component with write access to user spending. CORR-015: defaulting to $250 was too permissive for unattended runs by colleagues; the framework now requires explicit opt-in for higher caps.
 
 ### 6. Per-iter pipeline snapshots
 
@@ -263,9 +264,39 @@ Future revisions should extend this skill — don't replace rules. Severity-grad
 
 ## Applying the framework to your problem
 
-This framework is **general**, not template-specific. Bring your own:
+This framework is **general**, not template-specific. Two ways to bring your own dataset:
 
-- **`harness.py`** — defines `load_data() → (X_train, y_train, X_holdout, y_holdout)` and `run_experiment(pipeline_path, timeout_seconds) → dict` for YOUR dataset. The harness encodes data shape, train/holdout split logic, and the primary scorer (ROC-AUC for fraud, RMSE for regression, NDCG for ranking, etc.). Whatever scale your data is — 5K rows, 5M rows, panel, cross-sectional, time-aware — the harness adapts to it.
+### Fast path: YAML config + harness factory
+
+For most tabular problems, write a YAML config and let the factory build the harness:
+
+```yaml
+# configs/your_dataset.yaml
+name: "Your dataset"
+data_dir: ./data/your_dataset/
+main_table: { path: train.csv, format: csv }
+target_column: TARGET
+id_column: row_id
+auxiliary_tables: []       # or list of {path, name, join_key} for multi-table
+multi_table: false         # set true for 1:N auxiliary tables (Home Credit style)
+split:
+  strategy: stratified     # random | time_ordered | stratified
+  holdout_frac: 0.20
+  random_seed: 42
+scorer: roc_auc            # roc_auc | rmse | accuracy | f1
+```
+
+Then: `harness = build_harness("configs/your_dataset.yaml")` and you're ready. Two example configs ship: `configs/ieee_cis_fraud.yaml` (single-table, time-ordered) and `configs/home_credit.yaml` (multi-table, stratified). See `helpers/autoresearch/harness_factory.py` for the full schema.
+
+**Single-table mode** (`multi_table: false`): auxiliary tables are pre-joined 1:1 onto main. Agent's `build_pipeline(X_train, y_train)` signature is unchanged.
+
+**Multi-table mode** (`multi_table: true`): auxiliary tables are passed in as raw DataFrames. Agent's signature is `build_pipeline(tables: dict[str, DataFrame], y_train)`. The agent invents cross-table aggregations — this is what makes Kaggle-style multi-table competitions tractable.
+
+### Custom path: hand-write the harness
+
+For datasets too complex for YAML (Snowflake-backed, streaming, custom preprocessing), write your own:
+
+- **`harness.py`** — defines `load_data() → (X_train, y_train, X_holdout, y_holdout)` and `run_experiment(pipeline_path, timeout_seconds) → dict` for YOUR dataset. The harness encodes data shape, train/holdout split logic, and the primary scorer. Whatever scale your data is — 5K rows, 5M rows, panel, cross-sectional, time-aware — the harness adapts to it.
 - **`pipeline.py`** (initial) — a minimal default `build_pipeline(X_train, y_train)` for your problem. Could be a default xgboost, a logistic regression, anything that establishes the floor. The agent will iteratively rewrite this.
 - **`program.md`** — what the agent should optimize, what's off-limits, severity gates specific to your domain. Reuses the same interpretability constraints (no PolynomialFeatures, etc.) but the goal/dimensions are yours to write.
 - **Retune search space** (`helpers/autoresearch/retune.py`) — the default `XGB_SEARCH` / `LGBM_SEARCH` dicts are starting points sized for ~500K-row tabular data. For your problem you may want different ranges (e.g., regression problems often want smaller `learning_rate`, larger `n_estimators`; small datasets want tighter `max_depth`). Override by editing the module or by passing a custom search.

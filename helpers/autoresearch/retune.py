@@ -377,6 +377,15 @@ def retune_top_n(
             "loop_metric": exp["metric"], "n_trials": n_trials, "algos": algo_str,
         })
 
+        # Per-candidate trials log — one line per Optuna trial with full params.
+        # Reproducibility (CORR-014): a colleague can grep this file to find
+        # the exact params of any historical trial, including the best, without
+        # needing to re-run the study to recover them.
+        trials_log_path = output_dir / f"trials_log_iter_{iter_num:04d}.jsonl"
+        # Truncate prior log if re-running this candidate
+        if trials_log_path.exists():
+            trials_log_path.unlink()
+
         t0 = time.time()
         objective = _make_objective(snap, harness_module, uses_xgb, uses_lgbm)
         study = optuna.create_study(
@@ -392,11 +401,26 @@ def retune_top_n(
 
         def _on_trial_end(study_, trial_):
             elapsed_s = round(time.time() - trial_start_times.get(trial_.number, time.time()), 1)
+            # Emit the lightweight event to runner_log (no params — keep it skim-friendly)
             _log_event(runner_log_path, {
                 "event": "retune_trial_complete", "rank": rank, "iter": iter_num,
                 "trial": trial_.number, "metric": trial_.value, "elapsed_s": elapsed_s,
                 "state": str(trial_.state),
             })
+            # Persist params per-trial to the per-candidate trials_log (CORR-014).
+            # This file is the source of truth for "what params did trial N use?"
+            try:
+                with trials_log_path.open("a") as f:
+                    f.write(json.dumps({
+                        "trial": trial_.number,
+                        "metric": trial_.value,
+                        "elapsed_s": elapsed_s,
+                        "state": str(trial_.state),
+                        "params": dict(trial_.params),
+                        "ts": int(time.time()),
+                    }, default=str) + "\n")
+            except Exception:
+                pass  # never crash on logging
 
         try:
             study.optimize(
