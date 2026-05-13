@@ -85,7 +85,7 @@ Autonomous experimentation above `bayesian-tuning`. Where Optuna can only tune h
 
 ![Autoresearch trajectory: climbs from Optuna baseline to Kaggle gold in ~67 iterations](docs/autoresearch_trajectory.png)
 
-**Reference benchmark** (IEEE-CIS Fraud Detection, public Kaggle): autoresearch reached **0.9406 ROC-AUC — Kaggle gold tier (≥0.94)** in ~67 total iterations (56 loop + retune), beating an Optuna-tuned baseline by **+2.04%**. Single XGB+LGBM ensemble, **~$30 LLM cost**, **~10h wall-clock**. All agent-engineered features pass the interpretability gate (no PolynomialFeatures, no hash encoding, no opaque cross-products).
+**Reference benchmark** (IEEE-CIS Fraud Detection, public Kaggle): autoresearch reached **0.9406 ROC-AUC — Kaggle gold tier (≥0.94)** in 61 total iterations (56 loop + 5 retune), beating an Optuna-tuned baseline by **+2.04%**. Single XGB+LGBM ensemble, **$30 LLM cost**, **10h wall-clock**. All agent-engineered features pass the interpretability gate (no PolynomialFeatures, no hash encoding, no opaque cross-products).
 
 Architecture: three-file separation (fixed harness, mutable pipeline, human-edited program.md), hill-climb-from-best, in-loop smoke test, feature-name lint, per-iter snapshots, Optuna retune with LLM-curated picks, interpretability gate, $250 cost cap, env-only API keys. See `.claude/skills/autoresearch-loop/skill.md` for the canonical rules and `agents/ml-autoresearch.md` for the agent contract.
 
