@@ -1,0 +1,79 @@
+# Autoresearch harness config — generic template.
+#
+# Point `build_harness("path/to/this.yaml")` at this file (after editing the
+# placeholders below) and you get a Harness ready for the autoresearch runner.
+# Two example shapes are documented in comments: SINGLE-TABLE and MULTI-TABLE.
+# Pick the shape that matches your problem; delete or comment out the other.
+#
+# Smoke-test after editing:
+#   python -m helpers.autoresearch.harness_factory path/to/your_config.yaml --dry-run
+
+# ---------------------------------------------------------------------------
+# Required fields
+# ---------------------------------------------------------------------------
+
+name: "Your Dataset Name"            # human-readable label
+data_dir: ./data/your-dataset/       # where the files live (relative to repo root)
+
+main_table:
+  path: train.csv                    # main table filename within data_dir
+  format: csv                        # csv | parquet
+
+target_column: your_target_column    # binary 0/1 for classification, numeric for regression
+id_column: your_row_id_column        # row identifier — used as join key for aux tables in multi-table mode
+
+# ---------------------------------------------------------------------------
+# SHAPE A — SINGLE-TABLE (auxiliary tables pre-joined 1:1 onto main)
+#
+# Use this when each row in main has at most one matching row in each aux
+# table (e.g., IEEE-CIS Fraud Detection has one identity record per transaction).
+# The harness pre-joins everything and hands the agent (X_train, y_train).
+# ---------------------------------------------------------------------------
+
+auxiliary_tables: []                 # empty list = no aux tables. Or:
+# auxiliary_tables:
+#   - name: identity
+#     path: identity.csv
+#     format: csv
+#     join_key: your_row_id_column
+#     join_strategy: left            # left | inner
+
+multi_table: false                   # false = single-table mode (pre-joined)
+
+# ---------------------------------------------------------------------------
+# SHAPE B — MULTI-TABLE (1:N auxiliary tables, agent invents aggregations)
+#
+# Use this when each main row has many aux rows (e.g., Home Credit has many
+# bureau records per customer). Pre-joining would explode the row count, so
+# the agent receives raw tables as a dict and decides how to aggregate.
+# Agent's pipeline signature becomes:
+#   build_pipeline(tables: dict[str, DataFrame], y_train) -> estimator
+# Estimator must define predict_proba(tables_holdout: dict[str, DataFrame]).
+# ---------------------------------------------------------------------------
+
+# To enable multi-table mode, uncomment below and remove the single-table block above:
+# multi_table: true
+# auxiliary_tables:
+#   - name: aux_one
+#     path: aux_one.csv
+#     format: csv
+#     join_key: your_row_id_column   # links 1:N to main
+#   - name: aux_two_under_one
+#     path: aux_two.csv
+#     format: csv
+#     join_key: aux_one_id_column    # nested under aux_one (joins to aux_one, not main)
+
+# ---------------------------------------------------------------------------
+# Split + scoring
+# ---------------------------------------------------------------------------
+
+split:
+  strategy: stratified               # stratified | time_ordered | random
+  holdout_frac: 0.20
+  random_seed: 42
+  # For time_ordered, add:
+  # time_column: your_time_column    # rows sorted ascending; last `holdout_frac` becomes holdout
+
+scorer: roc_auc                      # roc_auc | rmse | accuracy | f1
+timeout_seconds: 600                 # per-experiment fit+predict timeout. Multi-table FE
+                                     # on big datasets may need 1200-1800.

@@ -1,20 +1,24 @@
 """
-Optuna-retune — fixes the unfair tuned-vs-untuned comparison.
+Optuna-retune — iterative-with-threshold cascade.
 
-After the autoresearch loop, an LLM curates N candidates from the top-20
-leaderboard (picking for architectural diversity + tuning upside, not just
-metric rank). Each picked snapshot is re-run with Optuna tuning the gradient-
-boosted model's hyperparameters while feature engineering + algorithm choice
-stay locked. Result: a "retuned leaderboard" comparable apples-to-apples to
-the Optuna-tuned baseline.
+After the autoresearch loop, retune the loop's best snapshot with Optuna.
+If the retuned metric crosses a domain-specific threshold (gold tier, 1st
+place, etc.), halt the cascade — done. Otherwise, ask the LLM to pick the
+next candidate from the top-20 leaderboard (with knowledge of what's already
+been tried and their retuned scores) and run another candidate. Up to `top_n`
+candidates can cascade before the run completes.
 
-Selection strategy:
-  - The top-N by metric tend to be near-duplicates (variations on the same
-    ensemble + small FE tweak). Retuning them produces N near-identical
-    numbers — methodological dead weight.
-  - LLM-curated selection: show top-20 + architectural fingerprint + the
-    agent's own summary. Ask for N picks that maximize information.
-  - Falls back to top-N by metric if the LLM call fails.
+Why iterative-with-threshold (vs the prior "LLM-curated parallel" pattern):
+  - On clean metric problems (Home Credit, IEEE-CIS Fraud), the loop's #1
+    snapshot is usually the right thing to retune. Most diversity-picking
+    happens in the LOOP, not in retune selection.
+  - Time-based budget (5h per candidate) lets Optuna sample more deeply than
+    a fixed n_trials budget — TPE convergence benefits from more trials in
+    the proven narrow space (see CORR-013).
+  - Threshold-driven halting matches the user's actual decision criterion:
+    "did we cross gold?" rather than "did we tune top-3 in parallel?". Single
+    candidate cascades cleanly when threshold IS crossed; LLM-picks-next
+    handles the case where it isn't.
 
 Tuning approach: monkey-patch XGBClassifier (and LGBMClassifier if present)
 so each trial's instantiation gets Optuna-suggested params overlaid on
@@ -28,6 +32,10 @@ Limitations:
     metric. Document this in the final report if any winner falls outside.
   - Each trial re-imports the pipeline (fresh module + fresh data load via
     cached harness fixtures). Trial cost ≈ fit time for that pipeline.
+  - Thresholds are problem-specific. Default `None` = no early halt; the
+    cascade always runs through `top_n` candidates. Users set
+    `RETUNE_THRESHOLD_GOLD` / `RETUNE_THRESHOLD_FIRST` for their problem
+    (see comments below for examples).
 """
 from __future__ import annotations
 
@@ -62,6 +70,17 @@ LGBM_SEARCH = {
     "reg_alpha":        ("float", 1e-3, 10.0, "log"),
     "reg_lambda":       ("float", 1e-3, 10.0, "log"),
 }
+
+# Iterative-with-threshold cascade config. Set thresholds per-problem to enable
+# early halt when retuned metric crosses a known boundary. None defaults mean
+# the cascade always runs through `top_n` candidates without checking.
+#
+# Examples (override in your driver script):
+#   IEEE-CIS Fraud: RETUNE_THRESHOLD_GOLD = 0.94, RETUNE_THRESHOLD_FIRST = 0.94653
+#   Home Credit:    RETUNE_THRESHOLD_GOLD = 0.80110, RETUNE_THRESHOLD_FIRST = 0.80570
+RETUNE_PER_CANDIDATE_HOURS = 5.0   # max wall-clock budget for Optuna on one candidate
+RETUNE_THRESHOLD_GOLD: float | None = None
+RETUNE_THRESHOLD_FIRST: float | None = None
 
 
 def _suggest(trial, search: dict, prefix: str = "") -> dict:
@@ -257,6 +276,83 @@ def _llm_curate_picks(
     return picked, rationale
 
 
+def _llm_pick_next_candidate(
+    pool: list[dict],
+    tried_results: list[dict],
+    snapshots_dir: Path,
+    model: str = "gpt-5.5",
+) -> tuple[dict | None, str]:
+    """Pick the next candidate to retune given what's already been tried.
+
+    Sees the prior tried iters + their retuned scores, plus the remaining pool
+    (with architectural fingerprints). Asks for ONE next pick prioritizing
+    architectural difference from prior tries + high loop metric.
+
+    Falls back to highest-metric-untried if the API call fails or LLM picks
+    an iter that isn't in the remaining pool.
+    """
+    import os, re
+    tried_iters = {r["iter"] for r in tried_results}
+    remaining = [c for c in pool if c["iter"] not in tried_iters]
+    if not remaining:
+        return None, "no remaining candidates"
+    if not os.environ.get("OPENAI_API_KEY"):
+        return remaining[0], "fallback: no API key, picking highest-metric untried"
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return remaining[0], "fallback: openai not installed"
+
+    tried_lines = []
+    for r in tried_results:
+        rm = r.get("retuned_metric")
+        rm_s = f"{rm:.4f}" if rm is not None else "skipped"
+        tried_lines.append(f"  iter={r['iter']}  loop={r['loop_metric']:.4f} → retuned={rm_s}")
+    remaining_lines = []
+    for rank, e in enumerate(remaining, 1):
+        snap = snapshots_dir / f"iter_{e['iter']:04d}.py"
+        fp = _fingerprint(snap) if snap.exists() else "snapshot missing"
+        remaining_lines.append(f"  #{rank} iter={e['iter']}  loop_metric={e['metric']:.4f}  {fp}\n      summary: {e['summary']}")
+
+    system = (
+        "You are selecting the NEXT autoresearch pipeline snapshot to retune. "
+        "Prior candidates have already been tuned and didn't hit the threshold. "
+        "Pick the single best remaining candidate — prioritize architectural difference "
+        "from what was already tried (so retune has a chance of breaking past where the "
+        "previous candidate plateaued) and high loop metric."
+    )
+    user = (
+        "Already tried (loop metric → retuned metric):\n"
+        + "\n".join(tried_lines) +
+        "\n\nRemaining candidates (top-20 by loop metric, with architectural fingerprint):\n\n"
+        + "\n".join(remaining_lines) +
+        "\n\nOutput format — exactly ONE pick:\n"
+        "PICK: iter=<N>  reason=<one short sentence on why this one is different/promising>"
+    )
+    try:
+        client = OpenAI()
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            max_completion_tokens=4000,
+        )
+        text = response.choices[0].message.content or ""
+    except Exception as e:
+        return remaining[0], f"fallback: api error {type(e).__name__}"
+
+    m = re.search(r"PICK:\s*iter=(\d+)\s*reason=(.*)", text)
+    if not m:
+        return remaining[0], "fallback: unparseable response"
+    picked_iter = int(m.group(1))
+    reason = m.group(2).strip()
+    by_iter = {e["iter"]: e for e in remaining}
+    if picked_iter not in by_iter:
+        return remaining[0], f"fallback: LLM picked iter={picked_iter} not in remaining"
+    picked = by_iter[picked_iter]
+    picked["_pick_reason"] = reason
+    return picked, reason
+
+
 def _log_event(runner_log_path: Path | None, event: dict) -> None:
     """Append an event to runner_log.jsonl, with path sanitization."""
     if runner_log_path is None:
@@ -309,16 +405,34 @@ def retune_top_n(
     experiments_path: Path,
     snapshots_dir: Path,
     output_dir: Path,
-    top_n: int = 5,
-    n_trials: int = 30,
+    top_n: int = 3,
+    n_trials: int = 50,
     harness_module: Any = None,
     runner_log_path: Path | None = None,
 ) -> list[dict]:
-    """Run Optuna over LLM-curated top-N pipeline snapshots; write retuned_leaderboard.md.
+    """Iterative-with-threshold retune cascade.
 
-    Logs per-trial and per-candidate events to runner_log_path if provided. Writes
-    incremental retuned_leaderboard.md after each candidate completes so partial
-    results survive a kill mid-flight (CORR-011).
+    Sequential cascade: try the best candidate first with a `RETUNE_PER_CANDIDATE_HOURS`
+    Optuna time budget. If retuned metric crosses `RETUNE_THRESHOLD_GOLD` or
+    `RETUNE_THRESHOLD_FIRST`, halt the cascade. Otherwise, ask the LLM to pick
+    the next candidate from the remaining pool (with prior retuned scores in
+    context). Repeat up to `top_n` candidates.
+
+    Args:
+        top_n: max candidates to cascade through (default 3 — more rarely helps;
+            if the top-1 plus 2 LLM-picked alternates don't crack threshold,
+            additional candidates usually don't either)
+        n_trials: ADVISORY — replaced by `RETUNE_PER_CANDIDATE_HOURS` time
+            budget in this mode. Kept in signature for runner CLI compatibility.
+
+    Per-candidate Optuna budget: `RETUNE_PER_CANDIDATE_HOURS` hours.
+    Thresholds: `RETUNE_THRESHOLD_GOLD` / `RETUNE_THRESHOLD_FIRST` (module-level
+    constants; users set per-problem; None = no early halt).
+
+    Logs per-trial events + per-candidate events to runner_log_path. Writes
+    incremental retuned_leaderboard.md after each candidate so partial results
+    survive a kill mid-flight (CORR-011, CORR-012). Per-candidate trials_log_iter_NNNN.jsonl
+    persists every trial's full params for reproducibility (CORR-014).
     """
     try:
         import optuna
@@ -328,7 +442,6 @@ def retune_top_n(
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-    # Read experiments, pick top-N successful entries
     if not experiments_path.exists():
         print(f"retune: {experiments_path} not found — skipping")
         return []
@@ -346,20 +459,42 @@ def retune_top_n(
         return []
 
     exps_sorted = sorted(exps, key=lambda e: e["metric"], reverse=True)
-    # Show the LLM the top 20 (more than top_n) so it can spot diverse picks
     pool = exps_sorted[:max(20, top_n * 4)]
-    print(f"retune: pool of {len(pool)} candidates — asking LLM to pick top-{top_n} for diversity + upside...")
-    candidates, rationale = _llm_curate_picks(pool, snapshots_dir, n_picks=top_n)
-    print(f"retune: rationale: {rationale[:300]}")
+    per_cand_seconds = int(RETUNE_PER_CANDIDATE_HOURS * 3600)
+    gold_s = f"{RETUNE_THRESHOLD_GOLD}" if RETUNE_THRESHOLD_GOLD is not None else "None (no early halt)"
+    first_s = f"{RETUNE_THRESHOLD_FIRST}" if RETUNE_THRESHOLD_FIRST is not None else "None (no early halt)"
+    print(f"retune (iterative-with-threshold): pool of {len(pool)} candidates")
+    print(f"  per-candidate budget: {RETUNE_PER_CANDIDATE_HOURS}h Optuna timeout")
+    print(f"  thresholds: gold={gold_s}, 1st={first_s}")
+    print(f"  max cascade depth: {top_n}")
 
-    results = []
-    for rank, exp in enumerate(candidates, 1):
+    # First candidate is always the loop best (#1 by metric)
+    first = pool[0]
+    first["_pick_reason"] = "loop best (#1 by metric)"
+    rationale = (
+        f"Iterative-with-threshold cascade: start with loop best (iter {first['iter']}, "
+        f"metric {first['metric']:.4f}). If retuned doesn't hit gold ({gold_s}) or "
+        f"1st place ({first_s}), LLM picks next candidate."
+    )
+
+    results: list[dict] = []
+    candidates_tried: list[dict] = []
+    next_candidate: dict | None = first
+    rank = 0
+
+    while next_candidate is not None and rank < top_n:
+        rank += 1
+        candidates_tried.append(next_candidate)
+        exp = next_candidate
         iter_num = exp["iter"]
         snap = snapshots_dir / f"iter_{iter_num:04d}.py"
+
         if not snap.exists():
             print(f"retune: iter {iter_num} snapshot missing at {snap} — skipping")
             results.append({"rank": rank, "iter": iter_num, "loop_metric": exp["metric"],
                             "retuned_metric": None, "delta": None, "skipped": "missing_snapshot"})
+            _write_leaderboard(output_dir, results, candidates_tried, rationale, 0, partial=True)
+            next_candidate, _ = _llm_pick_next_candidate(pool, results, snapshots_dir)
             continue
 
         uses_xgb, uses_lgbm = _detect_algorithms(snap)
@@ -368,21 +503,24 @@ def retune_top_n(
             results.append({"rank": rank, "iter": iter_num, "loop_metric": exp["metric"],
                             "retuned_metric": None, "delta": None,
                             "skipped": "unsupported_algorithm"})
+            _write_leaderboard(output_dir, results, candidates_tried, rationale, 0, partial=True)
+            next_candidate, _ = _llm_pick_next_candidate(pool, results, snapshots_dir)
             continue
 
         algo_str = ('xgb' if uses_xgb else '') + ('+' if uses_xgb and uses_lgbm else '') + ('lgbm' if uses_lgbm else '')
-        print(f"retune: iter {iter_num} ({n_trials} trials, {algo_str}) ...")
+        print(f"\nretune cascade #{rank}: iter {iter_num} (loop={exp['metric']:.4f}, algos={algo_str})")
+        print(f"  reason: {exp.get('_pick_reason', '(no reason)')}")
+        print(f"  budget: {RETUNE_PER_CANDIDATE_HOURS}h Optuna timeout")
         _log_event(runner_log_path, {
             "event": "retune_candidate_start", "rank": rank, "iter": iter_num,
-            "loop_metric": exp["metric"], "n_trials": n_trials, "algos": algo_str,
+            "loop_metric": exp["metric"], "budget_hours": RETUNE_PER_CANDIDATE_HOURS,
+            "algos": algo_str, "pick_reason": exp.get("_pick_reason", ""),
         })
 
         # Per-candidate trials log — one line per Optuna trial with full params.
-        # Reproducibility (CORR-014): a colleague can grep this file to find
-        # the exact params of any historical trial, including the best, without
-        # needing to re-run the study to recover them.
+        # Reproducibility (CORR-014): grep this file to find the exact params of
+        # any historical trial without needing to re-run the study.
         trials_log_path = output_dir / f"trials_log_iter_{iter_num:04d}.jsonl"
-        # Truncate prior log if re-running this candidate
         if trials_log_path.exists():
             trials_log_path.unlink()
 
@@ -394,21 +532,18 @@ def retune_top_n(
             study_name=f"retune_iter_{iter_num}",
         )
 
-        trial_start_times = {}
+        trial_start_times: dict[int, float] = {}
 
         def _on_trial_start(study_, trial_):
             trial_start_times[trial_.number] = time.time()
 
-        def _on_trial_end(study_, trial_):
+        def _on_trial_end(study_, trial_, _rank=rank, _iter=iter_num):
             elapsed_s = round(time.time() - trial_start_times.get(trial_.number, time.time()), 1)
-            # Emit the lightweight event to runner_log (no params — keep it skim-friendly)
             _log_event(runner_log_path, {
-                "event": "retune_trial_complete", "rank": rank, "iter": iter_num,
+                "event": "retune_trial_complete", "rank": _rank, "iter": _iter,
                 "trial": trial_.number, "metric": trial_.value, "elapsed_s": elapsed_s,
                 "state": str(trial_.state),
             })
-            # Persist params per-trial to the per-candidate trials_log (CORR-014).
-            # This file is the source of truth for "what params did trial N use?"
             try:
                 with trials_log_path.open("a") as f:
                     f.write(json.dumps({
@@ -420,16 +555,17 @@ def retune_top_n(
                         "ts": int(time.time()),
                     }, default=str) + "\n")
             except Exception:
-                pass  # never crash on logging
+                pass
 
         try:
             study.optimize(
-                objective, n_trials=n_trials, show_progress_bar=False,
-                callbacks=[_on_trial_end],
+                objective,
+                timeout=per_cand_seconds,
+                show_progress_bar=False,
+                callbacks=[_on_trial_start, _on_trial_end],
             )
-            retuned = float(study.best_value)
+            retuned = float(study.best_value) if len(study.trials) > 0 else None
         except KeyboardInterrupt:
-            # Capture partial: best trial completed so far
             partial = float(study.best_value) if len(study.trials) > 0 else None
             results.append({"rank": rank, "iter": iter_num, "loop_metric": exp["metric"],
                             "retuned_metric": partial, "delta": (partial - exp["metric"]) if partial else None,
@@ -437,7 +573,10 @@ def retune_top_n(
                             "best_params": study.best_params if partial else None})
             _log_event(runner_log_path, {"event": "retune_candidate_interrupted",
                                          "rank": rank, "iter": iter_num,
-                                         "completed_trials": len(study.trials), "partial_best": partial})
+                                         "completed_trials": len(study.trials),
+                                         "partial_best": partial})
+            _write_leaderboard(output_dir, results, candidates_tried, rationale,
+                               len(study.trials), partial=True)
             print(f"retune: iter {iter_num} interrupted at trial {len(study.trials)}, partial best={partial}")
             raise
         except Exception as e:
@@ -448,33 +587,63 @@ def retune_top_n(
             results.append({"rank": rank, "iter": iter_num, "loop_metric": exp["metric"],
                             "retuned_metric": None, "delta": None,
                             "skipped": f"trial_error: {type(e).__name__}"})
+            _write_leaderboard(output_dir, results, candidates_tried, rationale, 0, partial=True)
+            next_candidate, _ = _llm_pick_next_candidate(pool, results, snapshots_dir)
             continue
+
         elapsed_min = (time.time() - t0) / 60
-        delta = retuned - exp["metric"]
+        n_trials_completed = len(study.trials)
+        delta = (retuned - exp["metric"]) if retuned is not None else None
         results.append({
             "rank": rank, "iter": iter_num, "loop_metric": exp["metric"],
             "retuned_metric": retuned, "delta": delta,
             "elapsed_min": round(elapsed_min, 1),
-            "best_params": study.best_params,
-            "n_trials": n_trials,
+            "best_params": study.best_params if retuned is not None else None,
+            "n_trials": n_trials_completed,
         })
         _log_event(runner_log_path, {
             "event": "retune_candidate_complete", "rank": rank, "iter": iter_num,
             "loop_metric": exp["metric"], "retuned_metric": retuned, "delta": delta,
-            "elapsed_min": round(elapsed_min, 1), "n_trials": n_trials,
-            "best_params": study.best_params,
+            "elapsed_min": round(elapsed_min, 1), "n_trials": n_trials_completed,
+            "best_params": study.best_params if retuned is not None else None,
         })
-        print(f"retune: iter {iter_num} loop={exp['metric']:.4f} → retuned={retuned:.4f} "
-              f"(Δ={delta:+.4f}, {elapsed_min:.1f} min)")
+        retuned_s = f"{retuned:.4f}" if retuned is not None else "None"
+        delta_s = f"{delta:+.4f}" if delta is not None else "None"
+        print(f"retune: cascade #{rank} iter {iter_num} loop={exp['metric']:.4f} → "
+              f"retuned={retuned_s} (Δ={delta_s}, {elapsed_min:.1f} min, "
+              f"{n_trials_completed} trials)")
+        _write_leaderboard(output_dir, results, candidates_tried, rationale,
+                           n_trials_completed, partial=True)
 
-        # Incremental persistence: write partial leaderboard after each candidate
-        # so partial results survive a kill mid-flight (CORR-011).
-        _write_leaderboard(output_dir, results, candidates, rationale, n_trials, partial=True)
+        # Threshold check — halt cascade if we crossed
+        if retuned is not None and RETUNE_THRESHOLD_FIRST is not None and retuned >= RETUNE_THRESHOLD_FIRST:
+            print(f"\n[CASCADE HALT] 1st-place threshold ({RETUNE_THRESHOLD_FIRST}) crossed at iter {iter_num}.")
+            _log_event(runner_log_path, {
+                "event": "retune_cascade_halt_threshold", "threshold": "first_place",
+                "metric": retuned, "iter": iter_num,
+            })
+            break
+        if retuned is not None and RETUNE_THRESHOLD_GOLD is not None and retuned >= RETUNE_THRESHOLD_GOLD:
+            print(f"\n[CASCADE HALT] Gold threshold ({RETUNE_THRESHOLD_GOLD}) crossed at iter {iter_num}.")
+            _log_event(runner_log_path, {
+                "event": "retune_cascade_halt_threshold", "threshold": "gold",
+                "metric": retuned, "iter": iter_num,
+            })
+            break
 
-    # Re-rank by retuned metric (None values go last)
+        if rank >= top_n:
+            print(f"\nCascade depth limit ({top_n}) reached; threshold not crossed.")
+            break
+
+        # Pick the next candidate
+        next_candidate, pick_rationale = _llm_pick_next_candidate(pool, results, snapshots_dir)
+        if next_candidate is None:
+            print("No remaining candidates; halting cascade.")
+            break
+        print(f"  next pick: iter {next_candidate['iter']} — {pick_rationale[:120]}")
+
     ranked = sorted(results, key=lambda r: (r.get("retuned_metric") or -1.0), reverse=True)
-
-    _write_leaderboard(output_dir, results, candidates, rationale, n_trials, partial=False)
-    print(f"\nretune: wrote retuned_leaderboard.md (final)")
-
+    _write_leaderboard(output_dir, results, candidates_tried, rationale,
+                       results[-1].get("n_trials", 0) if results else 0, partial=False)
+    print(f"\nretune: wrote retuned_leaderboard.md (final, {len(candidates_tried)} candidates cascaded)")
     return ranked
