@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased] - fork additions
 
+### Added (running-rikishi fork) — v1.2 polish
+
+- **Iterative-with-threshold retune cascade** (`helpers/autoresearch/retune.py`): replaces the prior LLM-curated-parallel mode. Start with the loop's #1 snapshot, run Optuna with a `RETUNE_PER_CANDIDATE_HOURS` time budget (default 5h), halt cascade if metric crosses `RETUNE_THRESHOLD_GOLD` or `RETUNE_THRESHOLD_FIRST`. If not, LLM picks the next candidate (with prior retuned scores in context) and re-runs. Up to `top_n` candidates cascade. Time-based budget enables deeper TPE sampling than fixed n_trials in the proven narrow search space (CORR-013).
+- **Second empirical-validation dataset** (Home Credit Default Risk, public Kaggle): multi-table problem, 7 tables in a hierarchy. Autoresearch reached **0.80116 ROC-AUC — Kaggle gold tier** (crossed 0.80110 boundary by +0.00006) in ~5.7h wall-clock + ~$63 LLM spend. 11/15 SHAP top features agent-engineered. The retune step was decisive — the loop alone delivered silver tier; the cascade pushed it to gold. n=2 across two different dataset shapes is a meaningfully stronger generality claim than n=1.
+- **Threshold constants** (`RETUNE_PER_CANDIDATE_HOURS`, `RETUNE_THRESHOLD_GOLD`, `RETUNE_THRESHOLD_FIRST`) in `retune.py`. Defaults None → no early halt; users set per-problem in their driver script. Example values for IEEE Fraud and Home Credit documented inline.
+
+### Changed (running-rikishi fork) — v1.2
+
+- `retune_top_n` semantics: `n_trials` arg is now advisory (replaced by `RETUNE_PER_CANDIDATE_HOURS` time budget); `top_n` now means "max cascade depth" (sequential) rather than "parallel batch size".
+- Example config: replaced Kaggle-specific configs (`configs/ieee_cis_fraud.yaml`, `configs/home_credit.yaml`) with a single generic `configs/example_config.yaml` template. The Kaggle configs required users to download data they wouldn't otherwise have; the new template documents both single-table and multi-table schemas with placeholder values, so users can adapt for their own data.
+
+### Added (running-rikishi fork) — v1.1 polish
+
+- **Dataset adapter pattern** (`helpers/autoresearch/harness_factory.py`): point at a YAML config that describes your dataset (main table, target, split, scorer, optional auxiliary tables) and get back a Harness ready for the autoresearch runner. Multi-table mode hands the agent raw DataFrames so it can invent cross-table aggregations.
+- **Per-trial param persistence** (CORR-014): `retune.py` now writes `trials_log_iter_NNNN.jsonl` per candidate with full Optuna params for every trial. Any historical trial is reproducible by reading its line from that file — no need to re-run the study.
+- **Safer default cost cap** (CORR-015): `DEFAULT_MAX_COST_USD` lowered from $250 to $30. First-time users can't accidentally burn $250 overnight. Serious research runs opt in explicitly via `--max-cost 250`.
+
 ### Added (running-rikishi fork)
 
 - Autoresearch framework for autonomous ML experimentation above bayesian-tuning

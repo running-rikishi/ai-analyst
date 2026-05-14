@@ -53,7 +53,7 @@ PRICING = {
 
 DEFAULT_MODEL = "gpt-5.5"
 DEFAULT_MAX_HOURS = 4.0
-DEFAULT_MAX_COST_USD = 250.0  # production ML research budget
+DEFAULT_MAX_COST_USD = 30.0  # safe default for new users; raise via --max-cost for serious research runs
 DEFAULT_TIMEOUT_SEC = 600
 DEFAULT_MAX_COMPLETION_TOKENS = 48000  # frontier-model reasoning headroom (gpt-5.x reserves tokens for CoT) — CORR-010
 HISTORY_TAIL = 20

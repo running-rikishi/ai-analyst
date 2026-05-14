@@ -85,9 +85,16 @@ Autonomous experimentation above `bayesian-tuning`. Where Optuna can only tune h
 
 ![Autoresearch trajectory: climbs from Optuna baseline to Kaggle gold in ~67 iterations](docs/autoresearch_trajectory.png)
 
-**Reference benchmark** (IEEE-CIS Fraud Detection, public Kaggle): autoresearch reached **0.9406 ROC-AUC — Kaggle gold tier (≥0.94)** in 61 total iterations (56 loop + 5 retune), beating an Optuna-tuned baseline by **+2.04%**. Single XGB+LGBM ensemble, **$30 LLM cost**, **10h wall-clock**. All agent-engineered features pass the interpretability gate (no PolynomialFeatures, no hash encoding, no opaque cross-products).
+**Reference benchmarks (n=2 public Kaggle competitions, different dataset shapes):**
 
-Architecture: three-file separation (fixed harness, mutable pipeline, human-edited program.md), hill-climb-from-best, in-loop smoke test, feature-name lint, per-iter snapshots, Optuna retune with LLM-curated picks, interpretability gate, $250 cost cap, env-only API keys. See `.claude/skills/autoresearch-loop/skill.md` for the canonical rules and `agents/ml-autoresearch.md` for the agent contract.
+| Dataset | Shape | Loop best | Retuned best | Result | Cost | Wall-clock |
+|---|---|---:|---:|---|---:|---:|
+| IEEE-CIS Fraud Detection | Single-table, time-ordered | 0.9355 | **0.9406** | **Kaggle gold tier** (≥0.94) | ~$30 | ~10h |
+| Home Credit Default Risk | Multi-table, stratified, 7 tables | 0.8001 (silver) | **0.80116** | **Kaggle gold tier** (crossed 0.80110 by +0.00006) | ~$63 | ~5.7h |
+
+Both runs used a single XGB+LGBM ensemble. All agent-engineered features pass the interpretability gate (no PolynomialFeatures, no hash encoding, no opaque cross-products, no UID concatenations). On Home Credit, the iterative retune cascade was decisive — the loop alone delivered silver; the cascade pushed it to gold.
+
+Architecture: three-file separation (fixed harness, mutable pipeline, human-edited program.md), hill-climb-from-best, in-loop smoke test, feature-name lint, per-iter snapshots, iterative-with-threshold Optuna retune (time-budgeted cascade, LLM picks next candidate if threshold not crossed), interpretability gate, $30 cost cap default ($250 with opt-in), env-only API keys. See `.claude/skills/autoresearch-loop/skill.md` for the canonical rules and `agents/ml-autoresearch.md` for the agent contract.
 
 **When to use:** tabular supervised ML with a clean target metric (classification, regression, ranking on tree-based or linear algorithms). Out of scope: deep learning, computer vision, LLM fine-tuning, and tacit-knowledge expert tasks (legal review, medical judgment) where the technique library isn't well-represented in LLM training.
 
